@@ -1,351 +1,311 @@
 """
-Core data contracts (types) for VizPipeline.
+Core data structures for VizPipeline.
 
-Purpose
--------
-Defines the stable, testable data structures that every module uses:
-profiling, type inference, relationship scoring, decision engine,
-reporting, and exporting.
-
-How to use
-----------
-- Import these types in other modules to avoid ad-hoc dict structures.
-- Treat these dataclasses as immutable "contracts" between components.
-
-What output
------------
-This module contains only types and helpers. It produces no plots, files,
-or side effects.
+Defines all dataclasses and enums used throughout the pipeline:
+- ColumnType, PlotType, RelationshipType enums
+- InferredType, DataQualityIssue, DataProfile
+- RelationshipScore, PlotItem, PlotPlan
+- Report (final output)
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 from enum import Enum
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+import pandas as pd
 
 
-# -----------------------------
-# Enums
-# -----------------------------
+class ColumnType(Enum):
+    """Enumeration of inferred column types."""
+    BOOLEAN = "boolean"
+    ID_LIKE = "id_like"
+    DATETIME = "datetime"
+    NUMERIC = "numeric"
+    HIGH_CARDINALITY = "high_cardinality"
+    CATEGORICAL = "categorical"
+    TEXT = "text"
+    UNKNOWN = "unknown"
 
-class Severity(str, Enum):
+
+class PlotType(Enum):
+    """Enumeration of supported plot types."""
+    # Univariate
+    HISTOGRAM = "histogram"
+    KDE = "kde"
+    BOXPLOT = "boxplot"
+    VIOLIN = "violin"
+    BARPLOT = "barplot"
+    PIE = "pie"
+
+    # Bivariate
+    SCATTER = "scatter"
+    HEXBIN = "hexbin"
+    KDE_2D = "kde_2d"
+    HEATMAP = "heatmap"
+    BOX_STRIP = "box_strip"
+    VIOLIN_STRIP = "violin_strip"
+
+    # Multivariate
+    PAIRPLOT = "pairplot"
+    SCATTER_3D = "scatter_3d"
+    CORRELATION_HEATMAP = "correlation_heatmap"
+
+
+class RelationshipType(Enum):
+    """Types of relationships between columns."""
+    NUMERIC_NUMERIC = "numeric_numeric"
+    NUMERIC_CATEGORICAL = "numeric_categorical"
+    CATEGORICAL_CATEGORICAL = "categorical_categorical"
+    DATETIME_NUMERIC = "datetime_numeric"
+    DATETIME_CATEGORICAL = "datetime_categorical"
+    TEXT_NUMERIC = "text_numeric"
+    TEXT_CATEGORICAL = "text_categorical"
+    UNKNOWN = "unknown"
+
+
+@dataclass
+class InferredType:
     """
-    Severity levels for diagnostics and issues.
+    Result of column type inference.
 
-    How to use
-    ----------
-    - Use Severity.ERROR for blocking problems.
-    - Use Severity.WARNING for non-blocking but important issues.
-    - Use Severity.INFO for informational notes.
-
-    What output
-    -----------
-    - String-valued enum suitable for JSON export.
+    Attributes:
+        column_name: Name of the column
+        inferred_type: Classified ColumnType
+        confidence: Confidence score (0.0-1.0)
+        rule_id: Which rule fired (e.g., "R_BOOLEAN_001")
+        reason: Human-readable explanation
+        metadata: Additional context dictionary
     """
-    ERROR = "ERROR"
-    WARNING = "WARNING"
-    INFO = "INFO"
-
-
-class ColumnKind(str, Enum):
-    """
-    Canonical column type taxonomy used across the pipeline.
-
-    How to use
-    ----------
-    - Assign one ColumnKind per column via the type inference module.
-    - Downstream components (scoring/decision) branch on ColumnKind.
-
-    What output
-    -----------
-    - String-valued enum suitable for JSON export.
-    """
-    NUMERIC = "NUMERIC"
-    CATEGORICAL = "CATEGORICAL"
-    HIGH_CARDINALITY = "HIGH_CARDINALITY"
-    DATETIME = "DATETIME"
-    TEXT = "TEXT"
-    BOOLEAN = "BOOLEAN"
-    ID = "ID"
-    UNKNOWN = "UNKNOWN"
-
-
-class PlotScope(str, Enum):
-    """
-    Granularity of a visualization item.
-
-    How to use
-    ----------
-    - UNIVARIATE: one column
-    - BIVARIATE: two columns
-    - MULTIVARIATE: >=3 columns
-
-    What output
-    -----------
-    - String-valued enum suitable for JSON export.
-    """
-    UNIVARIATE = "UNIVARIATE"
-    BIVARIATE = "BIVARIATE"
-    MULTIVARIATE = "MULTIVARIATE"
-
-
-# -----------------------------
-# Diagnostics / Issues
-# -----------------------------
-
-@dataclass(frozen=True)
-class QualityIssue:
-    """
-    A structured diagnostic emitted by profiling, inference, scoring, etc.
-
-    How to use
-    ----------
-    - Create issues instead of raising for non-blocking problems.
-    - Collect issues and show them in the "Limitations & Warnings" report chapter.
-
-    Inputs
-    ------
-    severity:
-        Severity level (ERROR/WARNING/INFO).
-    message:
-        Human-readable message.
-    column:
-        Optional column name the issue refers to.
-    details:
-        Optional key/value details safe for JSON export (e.g., counts, thresholds).
-
-    What output
-    -----------
-    - A JSON-serializable object (enums are strings).
-    """
-    severity: Severity
-    message: str
-    column: Optional[str] = None
-    details: Dict[str, Any] = field(default_factory=dict)
-
-
-# -----------------------------
-# Profiling
-# -----------------------------
-
-@dataclass(frozen=True)
-class DataProfile:
-    """
-    Lightweight dataset profile used for decisions and reporting.
-
-    How to use
-    ----------
-    - Produced by the DataframeProfiler.
-    - Consumed by TypeInferrer and DecisionEngine to apply guardrails and limits.
-
-    Inputs
-    ------
-    n_rows, n_cols:
-        Basic shape.
-    dtypes:
-        Mapping column -> dtype string (as reported by pandas).
-    missing_rate:
-        Mapping column -> fraction in [0, 1].
-    unique_count:
-        Mapping column -> integer number of unique values (incl. NaN handling by profiler policy).
-    constant_cols:
-        Columns detected as constant / near-constant by profiler policy.
-    duplicate_row_count:
-        Number of duplicated rows (policy-defined).
-    notes:
-        Free-form notes (e.g., "sampled", "large dataset") suitable for report.
-
-    What output
-    -----------
-    - Immutable snapshot of dataset diagnostics.
-    """
-    n_rows: int
-    n_cols: int
-    dtypes: Mapping[str, str]
-    missing_rate: Mapping[str, float]
-    unique_count: Mapping[str, int]
-    constant_cols: Tuple[str, ...] = ()
-    duplicate_row_count: int = 0
-    notes: Tuple[str, ...] = ()
-
-
-# -----------------------------
-# Type Inference
-# -----------------------------
-
-@dataclass(frozen=True)
-class InferredColumnType:
-    """
-    Result of type inference for a single column.
-
-    How to use
-    ----------
-    - Created by ColumnTypeInferrer.
-    - Use 'kind' for branching; keep 'reason' for audit/report transparency.
-
-    Inputs
-    ------
-    kind:
-        ColumnKind classification.
-    confidence:
-        Float in [0, 1] indicating heuristic confidence (not a statistical probability).
-    rule_id:
-        Identifier of the rule/heuristic that assigned this type (for audit logs).
-    reason:
-        Short human-readable explanation (for report).
-
-    What output
-    -----------
-    - Immutable, JSON-friendly object.
-    """
-    kind: ColumnKind
+    column_name: str
+    inferred_type: ColumnType
     confidence: float
     rule_id: str
     reason: str
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict:
+        """Convert to JSON-serializable dict."""
+        return {
+            "column_name": self.column_name,
+            "inferred_type": self.inferred_type.value,
+            "confidence": self.confidence,
+            "rule_id": self.rule_id,
+            "reason": self.reason,
+            "metadata": self.metadata,
+        }
 
 
-@dataclass(frozen=True)
-class TypeAssignment:
+@dataclass
+class DataQualityIssue:
     """
-    Collection of inferred column types.
+    A single data quality problem detected during profiling.
 
-    How to use
-    ----------
-    - Produced by ColumnTypeInferrer.infer_types(...)
-    - Pass around as a single object to prevent drift and missing columns.
-
-    What output
-    -----------
-    - Mapping-like container with helper accessors.
+    Attributes:
+        severity: "ERROR", "WARNING", or "INFO"
+        column: Column name (None if dataset-level issue)
+        message: Human-readable description
+        metric_name: Technical metric identifier
+        metric_value: Numeric or other value of the metric
     """
-    types: Mapping[str, InferredColumnType]
-
-    def kind_of(self, column: str) -> ColumnKind:
-        """Return ColumnKind for a column (UNKNOWN if missing)."""
-        t = self.types.get(column)
-        return t.kind if t is not None else ColumnKind.UNKNOWN
-
-    def columns_of_kind(self, kind: ColumnKind) -> Tuple[str, ...]:
-        """Return all columns assigned to a given ColumnKind."""
-        return tuple(col for col, t in self.types.items() if t.kind == kind)
+    severity: str
+    column: Optional[str]
+    message: str
+    metric_name: str
+    metric_value: Optional[Any] = None
 
 
-# -----------------------------
-# Relationship Scoring (generic contract)
-# -----------------------------
+@dataclass
+class DataProfile:
+    """
+    High-level statistical summary of the entire dataset.
 
-@dataclass(frozen=True)
+    Attributes:
+        n_rows: Number of observations
+        n_cols: Number of columns
+        memory_mb: Total memory usage in MB
+        dtypes_distribution: {dtype: count} histogram
+        missing_by_col: {column_name: pct_missing} (0.0-1.0)
+        unique_by_col: {column_name: n_unique}
+        quality_issues: List of detected issues
+    """
+    n_rows: int
+    n_cols: int
+    memory_mb: float
+    dtypes_distribution: Dict[str, int]
+    missing_by_col: Dict[str, float]
+    unique_by_col: Dict[str, int]
+    quality_issues: List[DataQualityIssue] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        """Convert to JSON-serializable dict."""
+        return {
+            "n_rows": self.n_rows,
+            "n_cols": self.n_cols,
+            "memory_mb": self.memory_mb,
+            "dtypes_distribution": self.dtypes_distribution,
+            "missing_by_col": self.missing_by_col,
+            "unique_by_col": self.unique_by_col,
+            "quality_issues": [
+                {
+                    "severity": issue.severity,
+                    "column": issue.column,
+                    "message": issue.message,
+                    "metric_name": issue.metric_name,
+                    "metric_value": issue.metric_value,
+                }
+                for issue in self.quality_issues
+            ],
+        }
+
+
+@dataclass
 class RelationshipScore:
     """
-    Generic relationship score between columns.
+    Numeric score quantifying a bivariate relationship.
 
-    How to use
-    ----------
-    - Produced by RelationshipScorer for candidate pairs (or subsets).
-    - DecisionEngine uses 'strength' for ranking and 'method' for transparency.
-
-    Inputs
-    ------
-    strength:
-        Normalized strength in [0, 1] (policy-defined; not necessarily correlation).
-    method:
-        Name of scoring method (e.g., 'spearman', 'cramers_v', 'eta').
-    details:
-        Additional method-specific values (e.g., raw coefficients, group sizes).
-    caveats:
-        Human-readable caveats (e.g., "n too small", "many missing").
-
-    What output
-    -----------
-    - Immutable, JSON-serializable score object.
+    Attributes:
+        col_a, col_b: Column names
+        relationship_type: Inferred relationship type
+        primary_score: Main correlation/association metric
+        secondary_score: P-value or other secondary metric
+        is_redundant: True if |score| > redundancy_threshold
+        effect_size_interpretation: "small", "medium", "large", or "unknown"
+        metadata: Additional scoring context
     """
-    strength: float
-    method: str
-    details: Dict[str, Any] = field(default_factory=dict)
-    caveats: Tuple[str, ...] = ()
+    col_a: str
+    col_b: str
+    relationship_type: RelationshipType
+    primary_score: float
+    secondary_score: Optional[float] = None
+    is_redundant: bool = False
+    effect_size_interpretation: str = "unknown"
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict:
+        """Convert to JSON-serializable dict."""
+        return {
+            "col_a": self.col_a,
+            "col_b": self.col_b,
+            "relationship_type": self.relationship_type.value,
+            "primary_score": self.primary_score,
+            "secondary_score": self.secondary_score,
+            "is_redundant": self.is_redundant,
+            "effect_size_interpretation": self.effect_size_interpretation,
+            "metadata": self.metadata,
+        }
 
 
-# -----------------------------
-# Plot planning (no rendering here)
-# -----------------------------
-
-@dataclass(frozen=True)
+@dataclass
 class PlotItem:
     """
-    A planned visualization (decision-layer output), without rendering details.
+    A single plot to be generated.
 
-    How to use
-    ----------
-    - DecisionEngine creates PlotItems (what to plot and why).
-    - Plotting/rendering layer consumes PlotItems and decides how to render.
-
-    Inputs
-    ------
-    scope:
-        PlotScope (univariate/bivariate/multivariate).
-    columns:
-        Tuple of involved column names (len depends on scope).
-    plot_kind:
-        Abstract plot type identifier (e.g., 'distribution', 'scatter', 'heatmap').
-        Keep this stable; renderer maps it to concrete libraries.
-    reason:
-        Human-readable explanation for selection.
-    priority:
-        Higher means more important (used for ordering).
-    related_to_target:
-        Whether this plot is target-aware (helps report structure).
-    score:
-        Optional RelationshipScore for bivariate/multivariate ranking transparency.
-    meta:
-        Optional additional info (e.g., 'sampled': True, 'top_k': 20). Must be JSON-safe.
-
-    What output
-    -----------
-    - Immutable description of a plot decision. No figures, no files.
+    Attributes:
+        plot_id: Unique identifier (e.g., "UNI_001", "BIV_005")
+        plot_type: Type of visualization
+        column_a: Primary column (x-axis or focus)
+        column_b: Secondary column (y-axis), None for univariate
+        column_c: Tertiary column (z-axis), None unless 3D
+        rank: Priority/ordering rank in final plan
+        score: Relevance score from RelationshipScorer
+        reason: Human-readable justification for selection
+        params: Plot-specific parameters (bins, alpha, etc.)
+        figure: Matplotlib figure object (populated after plotting)
     """
-    scope: PlotScope
-    columns: Tuple[str, ...]
-    plot_kind: str
-    reason: str
-    priority: float = 0.0
-    related_to_target: bool = False
-    score: Optional[RelationshipScore] = None
-    meta: Dict[str, Any] = field(default_factory=dict)
+    plot_id: str
+    plot_type: PlotType
+    column_a: str
+    column_b: Optional[str] = None
+    column_c: Optional[str] = None
+    rank: int = 0
+    score: Optional[float] = None
+    reason: str = ""
+    params: Dict[str, Any] = field(default_factory=dict)
+    figure: Optional[Any] = None
+
+    def to_dict(self) -> dict:
+        """Convert to JSON (figure excluded)."""
+        return {
+            "plot_id": self.plot_id,
+            "plot_type": self.plot_type.value,
+            "column_a": self.column_a,
+            "column_b": self.column_b,
+            "column_c": self.column_c,
+            "rank": self.rank,
+            "score": self.score,
+            "reason": self.reason,
+            "params": self.params,
+        }
 
 
-@dataclass(frozen=True)
+@dataclass
 class PlotPlan:
     """
-    Full plot plan produced by DecisionEngine.
+    The complete plan of visualizations to generate.
 
-    How to use
-    ----------
-    - The pipeline returns PlotPlan as part of the final Report object.
-    - Renderers iterate plan.items in order and create visuals.
-
-    Inputs
-    ------
-    items:
-        Ordered list of PlotItem.
-    limits_applied:
-        Records which guardrails/limits were applied (e.g., max_bivariate_pairs).
-    audit:
-        High-level audit log (counts, rules fired, reasons) safe for JSON.
-
-    What output
-    -----------
-    - Immutable plan and metadata, suitable for golden-file tests.
+    Attributes:
+        items: List of PlotItem objects, ordered by rank
+        univariate_count: Number of univariate plots selected
+        bivariate_count: Number of bivariate plots selected
+        multivariate_count: Number of multivariate plots selected
+        audit_log: Dictionary of selection decisions
     """
-    items: Tuple[PlotItem, ...]
-    limits_applied: Dict[str, Any] = field(default_factory=dict)
-    audit: Dict[str, Any] = field(default_factory=dict)
+    items: List[PlotItem] = field(default_factory=list)
+    univariate_count: int = 0
+    bivariate_count: int = 0
+    multivariate_count: int = 0
+    audit_log: Dict[str, Any] = field(default_factory=dict)
 
-    @property
-    def n_items(self) -> int:
-        """How many PlotItems are in this plan."""
-        return len(self.items)
+    def to_dict(self) -> dict:
+        """Convert to JSON-serializable dict."""
+        return {
+            "univariate_count": self.univariate_count,
+            "bivariate_count": self.bivariate_count,
+            "multivariate_count": self.multivariate_count,
+            "total_count": len(self.items),
+            "items": [item.to_dict() for item in self.items],
+            "audit_log": self.audit_log,
+        }
 
-    def by_scope(self, scope: PlotScope) -> Tuple[PlotItem, ...]:
-        """Return items matching a given PlotScope."""
-        return tuple(i for i in self.items if i.scope == scope)
+
+@dataclass
+class Report:
+    """
+    Complete output of VizPipeline.run().
+
+    The Report is the primary return value containing all results,
+    metadata, warnings, and machine-readable summaries.
+
+    Attributes:
+        plot_plan: PlotPlan with ranked visualization items
+        data_profile: DataProfile with shape and quality info
+        type_assignment: Dict[column_name -> InferredType]
+        html_report: Complete HTML document (if enabled)
+        json_summary: Machine-readable JSON summary
+        audit_log: Dictionary of all decision traces
+        warnings: List of non-blocking issues
+        errors: List of blocking issues encountered
+        metadata: Version, timestamp, seed, config used
+    """
+    plot_plan: PlotPlan
+    data_profile: DataProfile
+    type_assignment: Dict[str, InferredType]
+    html_report: Optional[str] = None
+    json_summary: Optional[Dict[str, Any]] = None
+    audit_log: Dict[str, Any] = field(default_factory=dict)
+    warnings: List[str] = field(default_factory=list)
+    errors: List[str] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict:
+        """Convert to JSON (html_report and figures excluded)."""
+        return {
+            "metadata": self.metadata,
+            "profile": self.data_profile.to_dict(),
+            "type_assignment": {
+                col: ta.to_dict() for col, ta in self.type_assignment.items()
+            },
+            "plot_plan": self.plot_plan.to_dict(),
+            "audit_log": self.audit_log,
+            "warnings": self.warnings,
+            "errors": self.errors,
+        }

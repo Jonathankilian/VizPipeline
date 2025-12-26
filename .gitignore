@@ -1,116 +1,73 @@
-# ============================================================
 # Python
-# ============================================================
-
-# Byte-compiled / optimized files
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
 *.so
-
-# ============================================================
-# Virtual environments
-# ============================================================
-
-.venv/
-venv/
-env/
-ENV/
-
-# ============================================================
-# Packaging / build artifacts
-# ============================================================
-
+.Python
 build/
+develop-eggs/
 dist/
-*.egg-info/
+downloads/
+eggs/
 .eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# ============================================================
-# PyCharm / IntelliJ
-# ============================================================
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+conda-env/
 
+# IDE
+.vscode/
 .idea/
-*.iml
-
-# ============================================================
-# Jupyter Notebook
-# ============================================================
-
-.ipynb_checkpoints/
-
-# Optional: exclude executed notebooks (if you prefer clean notebooks)
-# notebooks/**/executed/
-# notebooks/**/output/
-
-# ============================================================
-# Testing / coverage
-# ============================================================
-
-.pytest_cache/
-.coverage
-.coverage.*
-htmlcov/
-.tox/
-.nox/
-
-# ============================================================
-# Type checking / linting
-# ============================================================
-
-.mypy_cache/
-.dmypy.json
-.pyre/
-
-# ============================================================
-# Logs / runtime artifacts
-# ============================================================
-
-*.log
-logs/
-*.tmp
-
-# ============================================================
-# OS-specific
-# ============================================================
-
-# macOS
-.DS_Store
-
-# Windows
-Thumbs.db
-desktop.ini
-
-# ============================================================
-# Editor backups
-# ============================================================
-
-*~
 *.swp
 *.swo
+*~
+.DS_Store
 
-# ============================================================
-# Project-specific outputs
-# ============================================================
+# Jupyter Notebooks (IMPORTANT!)
+*.ipynb
+.ipynb_checkpoints/
 
-# Generated reports / exports
-reports/
-outputs/
-export/
-*.html
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Data & Media (IMPORTANT!)
+data/
+datasets/
+*.csv
+*.xlsx
+*.xls
+*.json
+*.parquet
+
+# Images (IMPORTANT!)
+*.jpg
+*.jpeg
 *.png
+*.gif
+*.bmp
 *.svg
+
+# Output files
+reports/
+output/
+*.html
 *.pdf
 
-# JSON summaries (keep if you want versioned baselines!)
-# *.json
-
-# ============================================================
-# Environment variables / secrets
-# ============================================================
-
+# Environment files
 .env
-.env.*
-
+.env.local
+secrets.json
